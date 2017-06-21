@@ -14,7 +14,7 @@ var PUB_DIR = '../public';
 var LOCAL_DIR = '/Users/liuzhanxin/Desktop/localenzyme/enzyme'
 var config = {
   paths: {
-    src: path.join(ROOT_PATH, 'Libraries'),
+    src: path.join(ROOT_PATH, '../Libraries'),
     demo: path.join(ROOT_PATH, DEMO_DIR),
      public: path.join(ROOT_PATH, PUB_DIR),
      local:LOCAL_DIR,
@@ -139,7 +139,7 @@ console.log(tempEntry,"sadasdasdadasdasd");
         query: {
           presets: ['react-native', 'stage-1']
         },
-        include: [config.paths.demo, config.paths.src,config.paths.local,config.paths.public],
+        include: [config.paths.demo, config.paths.src,config.paths.local,config.paths.public,config.paths.src],
       }]
     }
   });
