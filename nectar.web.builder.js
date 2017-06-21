@@ -106,8 +106,6 @@ app.post('/api/uploadProjectZip', function (req, res) {
 
 //下载构建结果
 app.get('/api/download', function (req, res) {
-
-
     //console.log(req.query.filename);
     var filename = "bundle.zip";
     var id = req.query.id;
@@ -129,25 +127,30 @@ app.get('/api/download', function (req, res) {
 app.post('/api/buildBundle', jsonParser, function (req, res) {
     var id = req.query.id;
     var buildType = req.query.buildType;
+    
 
     //开发期构建
     if (buildType == 'develop') {
         var entryfile_path = req.query.entryfile_path;
+        var workspace_name  = req.query.workspace_name;
+        var username  = req.query.username;
+
         if (!entryfile_path) {
             callBackFailed(res, "no entryfile_path");
             return;
         }
 
-        var outPutPath = path.resolve(__dirname, 'public', id, 'result');
-        createPath(outPutPath, function () {
+        var outPutPath = path.resolve(__dirname, workspace_name,username,workspace_name,'target', "webbundle",id);
+        console.log(outPutPath);
+        // createPath(outPutPath, function () {
 
-            // var entryPath = path.resolve(absolute_path, entryfile_path);
-            var entryPath = "/Users/liuzhanxin/Desktop/react-web-dgt/Examples/dgt/index.web.js";
+        //     // var entryPath = path.resolve(absolute_path, entryfile_path);
+        //     var entryPath = "/Users/liuzhanxin/Desktop/react-web-dgt/Examples/dgt/index.web.js";
 
-            buildBundle([{ name: 'index', path: entryPath, title: 'index', htmlFileName: 'index.html' }], outPutPath, buildType, id, function () {
-                res.json({ state: 200, msg: "success" });
-            });
-        });
+        //     buildBundle([{ name: 'index', path: entryPath, title: 'index', htmlFileName: 'index.html' }], outPutPath, buildType, id, function () {
+        //         res.json({ state: 200, msg: "success" });
+        //     });
+        // });
     }
 
     //生产期构建，需要从配置文件中读取入口文件等相关配置

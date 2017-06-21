@@ -36,11 +36,11 @@ var mergeCommon = merge.bind(null, {
     loaders: [{
       test: /\.png$/,
       loader: 'url?limit=100000&mimetype=image/png',
-      include: [config.paths.demo,config.paths.local]
+      include: [config.paths.demo,config.paths.local,config.paths.public]
     }, {
       test: /\.jpg$/,
       loader: 'file',
-      include: [config.paths.demo,config.paths.local]
+      include: [config.paths.demo,config.paths.local,config.paths.public]
     }, {
       test: /\.json$/,
       loader: 'json',
