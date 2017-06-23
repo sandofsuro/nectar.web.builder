@@ -14,17 +14,20 @@ const archiver = require('archiver');
 const unzipMoudle = require('unzip');
 const log4js = require('log4js');
 const adm_zip = require('adm-zip')
+const exec = require('child_process').exec;
 
-log4js.configure({
-    appenders: [{
-        type: 'file',
-        filename: 'log/build.log'
-    }]
-})
-var logger = log4js.getLogger('custom-appender');
+// log4js.configure({
+//     appenders: [{
+//         type: 'file',
+//         filename: 'log/build.log'
+//     }]
+// })
+// var logger = log4js.getLogger('custom-appender');
 
 
 var status = {};
+var is_building = false;
+
 
 app.use(cors())
 app.use(function (req, res, next) {
@@ -33,7 +36,19 @@ app.use(function (req, res, next) {
 });
 
 
-app.use(express.static(path.join(__dirname, 'public')));
+//开发期预览不要这个
+var assets_path = path.join(__dirname, 'public');
+fs.access(assets_path, (err) => {
+    if (err) {
+        fs.mkdirSync(assets_path);
+    }
+
+    app.use(express.static(assets_path));;
+
+});
+
+
+
 
 
 
@@ -53,7 +68,7 @@ app.get('/api/status', jsonParser, function (req, res) {
 
     if (!status[id]) {
         res.json({ state: 404, msg: "not found" });
-        //utPutLog(log4js,id,"just a test");
+        // outPutLog(log4js,id,"just a test");
     } else {
         res.json({ state: status[id], msg: getStatusMsg(status[id]) });
     }
@@ -94,13 +109,20 @@ app.post('/api/uploadProjectZip', function (req, res) {
 });
 
 // todo :获取构建日志
-// app.post('/api/getLog',jsonParser,function(req,res){
-//     var id = req.query.id;
-//     if(!id){
-//         callBackFailed(res,"no id");
-//     }
+app.get('/api/getLog', jsonParser, function (req, res) {
+    var id = req.query.id;
+    if (!id) {
+        callBackFailed(res, "no id");
+    }
+    else {
 
-// });
+        var logPath = path.join(__dirname, '/public/', id, "/log/build.log");
+        var log_stream = fs.createReadStream(logPath)
+        log_stream.pipe(res);//todo :出错处理？
+
+    }
+
+});
 
 
 
@@ -112,14 +134,19 @@ app.get('/api/download', function (req, res) {
 
     if (!filename) {
         callBackFailed(res, "no filename");
+        outPutLog(log4js, id, "下载构建结果失败,未找到bundle.zip!");
     }
     if (!id) {
         callBackFailed(res, "no id");
+        outPutLog(log4js, id, "下载构建结果失败,未找到用户id!");
     }
 
     var filepath = path.resolve(__dirname, 'public', id, 'bundlezip') + '/' + filename;
     //console.log(filepath);
-    fs.createReadStream(filepath).pipe(res);//todo :出错处理
+    var stream = fs.createReadStream(filepath)
+    stream.pipe(res);//todo :出错处理？
+
+    outPutLog(log4js, id, "下载构建结果成功!");
 });
 
 //执行构建
@@ -127,30 +154,39 @@ app.get('/api/download', function (req, res) {
 app.post('/api/buildBundle', jsonParser, function (req, res) {
     var id = req.query.id;
     var buildType = req.query.buildType;
-    
+
+    outPutLog(log4js, id, "构建发起成功!");
 
     //开发期构建
     if (buildType == 'develop') {
         var entryfile_path = req.query.entryfile_path;
-        var workspace_name  = req.query.workspace_name;
-        var username  = req.query.username;
+        var workspace_name = req.query.workspace_name;
+        var username = req.query.username;
 
         if (!entryfile_path) {
             callBackFailed(res, "no entryfile_path");
             return;
         }
 
-        var outPutPath = path.resolve(__dirname, workspace_name,username,workspace_name,'target', "webbundle",id);
-        console.log(outPutPath);
-        // createPath(outPutPath, function () {
+        var nectarOutPutPath = path.resolve(__dirname, workspace_name, username, workspace_name, 'target', "nectar", "web", id);
 
-        //     // var entryPath = path.resolve(absolute_path, entryfile_path);
-        //     var entryPath = "/Users/liuzhanxin/Desktop/react-web-dgt/Examples/dgt/index.web.js";
+        fs.mkdirSync(nectarOutPutPath);
 
-        //     buildBundle([{ name: 'index', path: entryPath, title: 'index', htmlFileName: 'index.html' }], outPutPath, buildType, id, function () {
-        //         res.json({ state: 200, msg: "success" });
-        //     });
-        // });
+        var entryPath = "./source/"+workspace_name + "/" + entryfile_path;
+
+        try {
+            buildBundle([{ name: 'index', path: entryPath, title: 'index', htmlFileName: 'index.html' }], outPutPath, buildType, id, function () {
+                res.json({ state: 200, msg: "success" });
+            });
+
+        } catch (error) {
+           
+           // outPutLog(log4js, id, "构建失败，请检查代码是否有误，错误信息:" + error);
+            //delProject(id);
+            res.json({ state: 503 });
+
+        }
+
     }
 
     //生产期构建，需要从配置文件中读取入口文件等相关配置
@@ -160,16 +196,16 @@ app.post('/api/buildBundle', jsonParser, function (req, res) {
         var targetDir = path.resolve(__dirname, 'public', id, "project");//解压的目标路径
         unzipfile(filepath, targetDir, function () {
 
-            var entryConfigPath = path.resolve(__dirname, 'public', id, 'project') + '/' + "build.json";
+            var entryConfigPath = path.resolve(__dirname, 'public', id, 'project') + '/platform/web.build.config';
             var entryConfig = {};
-            entryConfig = require(entryConfigPath);
+            entryConfig = JSON.parse(fs.readFileSync(entryConfigPath, 'utf8'));
             var outPutPath = path.resolve(__dirname, 'public', id, 'result');
             fs.access(outPutPath, function (err) {
                 if (err) {
                     fs.mkdir(outPutPath);
                 }
 
-               var entries = [];
+                var entries = [];
                 for (var i in entryConfig) {
 
                     entryConfig[i].path = path.resolve(__dirname, 'public', id, "project") + entryConfig[i].path;
@@ -177,10 +213,20 @@ app.post('/api/buildBundle', jsonParser, function (req, res) {
                 }
                 console.log(entries);
 
-                buildBundle(entries, outPutPath, buildType, id, function () {
-                    status[id] = 2;
-                    res.json({ state: 200 });
-                });
+                try {
+                    console.log("@@@@@")
+                    buildBundle(entries, outPutPath, buildType, id, function () {
+                        //
+                        res.json({ state: 200 });
+                    });
+
+                } catch (error) {
+                    console.log("???????")
+                    outPutLog(log4js, id, "构建失败，请检查代码是否有误，错误信息:" + error);
+                    delProject(id);
+                    res.json({ state: 503 });
+
+                }
 
 
             });
@@ -200,10 +246,11 @@ app.post('/api/getSpaces', jsonParser, function (req, res) {
     var outPutPath = path.resolve(__dirname, 'public', id);
     fs.access(outPutPath, function (err) {
         if (err) {
-            fs.mkdir(outPutPath);
+            fs.mkdirSync(outPutPath);
+            outPutLog(log4js, id, "获取构建工作空间成功！");
+            res.json({ id: id, state: 200 });
         }
     });
-    res.json({ id: id, state: 200 });
 
 });
 
@@ -220,21 +267,29 @@ var acServer = app.listen(9000, 300, function () {
 
 
 //压缩文件
-var zipfile = function (sourcePath, targetPath, callback) {
+var zipfile = function (sourcePath, targetPath, id, callback) {
     fs.exists(sourcePath, function (exists) {
         if (exists) {
             fs.lstat(sourcePath, function (err, stat) {
                 var archive = archiver('zip');
                 archive.on('error', function (err) {
                     //exe_callback(err, null, callback);
+                    outPutLog(log4js, id, "压缩文件失败!");
+                    return;
                 });
                 var writeStream = fs.createWriteStream(targetPath);
                 archive.pipe(writeStream);
                 writeStream.on('close', function (err, data) {
-                    //exe_callback(err, data, callback);
+                    //sexe_callback(err, data, callback);
+                    status[id] = 2;
+                    console.log("#############################", status[id], id)
+
                 });
                 writeStream.on('error', function (err, data) {
                     //	exe_callback(err, data, callback);
+                    outPutLog(log4js, id, "压缩文件失败，写入流错误!");
+                    status[id] = 3;
+                    return;
                 });
                 if (stat.isDirectory()) {
                     archive.directory(sourcePath, "");
@@ -246,6 +301,7 @@ var zipfile = function (sourcePath, targetPath, callback) {
                 archive.finalize();
             });
         } else {
+            outPutLog(log4js, id, "压缩文件失败，文件不错在!");
             //exe_callback(sourcePath + "不存在,压缩失败", null, callback);
         }
     });
@@ -260,9 +316,9 @@ var unzipfile = function (sourceZip, targetDir, callback) {
                 if (err) {
                     fs.mkdirSync(targetDir);
 
-                    var unzip = new adm_zip(sourceZip);  
+                    var unzip = new adm_zip(sourceZip);
                     unzip.extractAllTo(targetDir, /*overwrite*/true);
-                    console.log("success?")
+                  //  console.log("success?")
                     callback();
                     // var readStream = fs.createReadStream(sourceZip);
                     // var writeStream = unzipMoudle.Extract({
@@ -293,10 +349,13 @@ var unzipfile = function (sourceZip, targetDir, callback) {
 
 //执行构建
 var buildBundle = function (entryArray, outPutPath, buildType, id, callback) {
+
     var wc = require('./config/config');
     var wcResult = wc(entryArray, outPutPath);
     var compiler = webpack(wcResult);
     status[id] = 1;
+    is_building = true;
+
     compiler.run(function (err, stats) {
         var options = {
             colors: true
@@ -304,13 +363,14 @@ var buildBundle = function (entryArray, outPutPath, buildType, id, callback) {
 
         console.log(stats.toString(options));
         // status[taskId] = -1;
-        if (err)
-        {
-            
+        if (err) {
+            outPutLog(log4js, id, "构建出错，请联系管理员!");
+            delProject(id);
+            return;
         }
-           // console.log(err + "======================");
+        // console.log(err + "======================");
         else {
-
+            outPutLog(log4js, id, "构建成功，准备打包构建结果!");
         }
         var zipPath = path.resolve(__dirname, 'public', id, 'bundlezip');
         var sourcePath = path.resolve(__dirname, 'public', id, 'result');
@@ -320,10 +380,12 @@ var buildBundle = function (entryArray, outPutPath, buildType, id, callback) {
             }
         });
         var zipFilePath = zipPath + '/bundle.zip';
-        zipfile(sourcePath, zipFilePath);
+        zipfile(sourcePath, zipFilePath, id);
+        delProject(id);
         callback();
 
     });
+
 
 
 };
@@ -332,9 +394,8 @@ var buildBundle = function (entryArray, outPutPath, buildType, id, callback) {
 var getStatusMsg = function (state) {
     switch (state) {
         case 1: return "building";
-        // case 2: return "zipping";
-        case 3: return "failed";
-        case 4: return "success"
+        case 2: return "build done";
+        case 3: return "build failed";
         default: return "unknown";
     }
 };
@@ -363,9 +424,33 @@ var outPutLog = function (log4js, id, buildLog) {
                 filename: filename
             }]
         })
-        var logger = log4js.getLogger('custom-appender');
+        var logger = log4js.getLogger('BUILD_LOG');
 
-        logger.debug(buildLog);
+        logger.info(buildLog);
     });
 
+}
+
+
+//构建完成之后删除解压的工程，防止冲突报错
+
+var delProject = function (id) {
+    var delPath = path.resolve(__dirname, "public", id, "project")
+    console.log(delPath);
+    // var del_cmd = "rm -rf " + delPath;
+    // exec(del_cmd, function (err, out) {
+
+    //     console.log(out); err && console.log(err);
+
+    // });
+}
+
+
+/**
+ *执行callback
+ */
+function exe_callback(err, data, callback) {
+    if (callback && typeof callback === 'function') {
+        callback(err, data);
+    }
 }
