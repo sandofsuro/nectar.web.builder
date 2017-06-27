@@ -117,8 +117,14 @@ app.get('/api/getLog', jsonParser, function (req, res) {
     else {
 
         var logPath = path.join(__dirname, '/public/', id, "/log/build.log");
-        var log_stream = fs.createReadStream(logPath)
-        log_stream.pipe(res);//todo :出错处理？
+        fs.access(logPath, function (err) {
+            if (err) {
+                return res.json( "获取日志失败");
+            }
+            var log_stream = fs.createReadStream(logPath)
+            log_stream.pipe(res);//todo :出错处理？
+
+        })
 
     }
 
@@ -172,7 +178,7 @@ app.post('/api/buildBundle', jsonParser, function (req, res) {
 
         fs.mkdirSync(nectarOutPutPath);
 
-        var entryPath = "./source/"+workspace_name + "/" + entryfile_path;
+        var entryPath = "./source/" + workspace_name + "/" + entryfile_path;
 
         try {
             buildBundle([{ name: 'index', path: entryPath, title: 'index', htmlFileName: 'index.html' }], outPutPath, buildType, id, function () {
@@ -180,8 +186,8 @@ app.post('/api/buildBundle', jsonParser, function (req, res) {
             });
 
         } catch (error) {
-           
-           // outPutLog(log4js, id, "构建失败，请检查代码是否有误，错误信息:" + error);
+
+            // outPutLog(log4js, id, "构建失败，请检查代码是否有误，错误信息:" + error);
             //delProject(id);
             res.json({ state: 503 });
 
@@ -318,7 +324,7 @@ var unzipfile = function (sourceZip, targetDir, callback) {
 
                     var unzip = new adm_zip(sourceZip);
                     unzip.extractAllTo(targetDir, /*overwrite*/true);
-                  //  console.log("success?")
+                    //  console.log("success?")
                     callback();
                     // var readStream = fs.createReadStream(sourceZip);
                     // var writeStream = unzipMoudle.Extract({
